@@ -18,9 +18,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 interface PluginConfig {
   token: string;
   port: number;
+  host: "127.0.0.1" | "0.0.0.0";
 }
 
-const DEFAULT_CONFIG: PluginConfig = { token: "", port: 3901 };
+const DEFAULT_CONFIG: PluginConfig = { token: "", port: 3901, host: "127.0.0.1" };
 const CONFIG_PATH = resolve(__dirname, "config.json");
 
 function loadConfig(): PluginConfig {
@@ -128,6 +129,7 @@ export default class DevSyncPlugin {
   private sessions = new Map<string, DevSession>();
   private token = "";
   private port = 3901;
+  private host: "127.0.0.1" | "0.0.0.0" = "127.0.0.1";
 
   private config = loadConfig();
 
@@ -136,6 +138,7 @@ export default class DevSyncPlugin {
 
     this.port = Number(process.env.DIAN_DEV_SYNC_PORT ?? this.config.port ?? 3901);
     this.token = process.env.DIAN_DEV_SYNC_TOKEN ?? this.config.token ?? "";
+    this.host = (process.env.DIAN_DEV_SYNC_HOST as "127.0.0.1" | "0.0.0.0") ?? this.config.host ?? "127.0.0.1";
 
     // 如果之前有本插件的 WSS 在运行（热重载场景），先关掉它
     const prev = globalThis.__dianDevSyncWss;
@@ -163,6 +166,7 @@ export default class DevSyncPlugin {
       reply.send({
         ok: true,
         port: this.config.port,
+        host: this.config.host,
         hasToken: !!this.config.token,
       });
     });
@@ -174,14 +178,15 @@ export default class DevSyncPlugin {
 
       if (typeof body.token === "string") next.token = body.token;
       if (typeof body.port === "number" && body.port > 0 && body.port < 65536) next.port = body.port;
+      if (body.host === "127.0.0.1" || body.host === "0.0.0.0") next.host = body.host;
 
       saveConfig(next);
       this.config = next;
 
       reply.send({ ok: true });
 
-      // 若 token 变化则重载自己，让新 WSS 使用新 token
-      if (body.token !== undefined) {
+      // 若 token/host/port 变化则重载自己，让新 WSS 使用新配置
+      if (body.token !== undefined || body.host !== undefined || body.port !== undefined) {
         setTimeout(() => {
           pluginManager.reload("dian-dev-sync").catch((err: unknown) => {
             console.error("[dian-dev-sync] self-reload failed:", err);
@@ -265,7 +270,7 @@ export default class DevSyncPlugin {
     });
 
     // ── WS 服务 ──────────────────────────────────────────────────────────────
-    this.wss = new WSS({ port: this.port, host: "127.0.0.1" });
+    this.wss = new WSS({ port: this.port, host: this.host });
 
     // 记录到全局，reload 时新实例能找到并关闭
     globalThis.__dianDevSyncWss = { wss: this.wss, instance: this };
@@ -282,7 +287,7 @@ export default class DevSyncPlugin {
       }
     });
 
-    console.info(`[dian-dev-sync] WS server listening on ws://127.0.0.1:${this.port}`);
+    console.info(`[dian-dev-sync] WS server listening on ws://${this.host}:${this.port}`);
     if (!this.token) {
       console.warn("[dian-dev-sync] DIAN_DEV_SYNC_TOKEN not set, auth will always fail");
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react"
 
 // ────────────────────────────────────────────────────────────────────────────
 // 内联 shadcn 风格小组件
@@ -77,6 +77,7 @@ function Badge({ children, className = "" }: { children: ReactNode; className?: 
 interface ConfigResponse {
   ok: boolean
   port: number
+  host: "127.0.0.1" | "0.0.0.0"
   hasToken: boolean
 }
 
@@ -123,8 +124,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [token, setToken] = useState("")
   const [port, setPort] = useState(3901)
+  const [host, setHost] = useState<"127.0.0.1" | "0.0.0.0">("127.0.0.1")
   const [saving, setSaving] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const initializedRef = useRef(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   const showToast = (msg: string, ok = true) => {
@@ -142,7 +145,11 @@ export default function App() {
       setConfig(cfg)
       setSessions(status.sessions ?? [])
       setHistory(hist.items ?? [])
-      setPort(cfg.port)
+      if (!initializedRef.current) {
+        setPort(cfg.port)
+        setHost(cfg.host ?? "127.0.0.1")
+        initializedRef.current = true
+      }
       setError(null)
     } catch {
       setError("无法连接到插件 API")
@@ -165,12 +172,13 @@ export default function App() {
       const res = await fetch(`${API}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim(), port }),
+        body: JSON.stringify({ token: token.trim(), port, host }),
       })
       const data = (await res.json()) as { ok?: boolean; error?: string }
       if (data.ok) {
         showToast("保存成功，插件将自动重载")
         setToken("")
+        initializedRef.current = false
         setTimeout(() => load(), 800)
       } else {
         showToast(data.error ?? "保存失败", false)
@@ -211,18 +219,19 @@ export default function App() {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold leading-none">Dian Dev Sync</h1>
-            <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+            <Badge className="border-emerald-600/30 bg-emerald-500/10 text-emerald-700">
               {config ? "运行中" : "加载中"}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground truncate">
-            {error ? error : `WS 端口 ${config?.port ?? "—"}`}
+            {error ? error : `WS ${config?.host ?? "—"}:${config?.port ?? "—"}`}
           </p>
         </div>
       </div>
 
       {/* ── 统计卡片 ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard label="监听地址" value={config?.host ?? "—"} mono />
         <StatCard label="WS 端口" value={config?.port ?? "—"} mono />
         <StatCard label="当前连接" value={sessions.length} />
         <StatCard label="Token 状态" value={config?.hasToken ? "已设置" : "未设置"} />
@@ -237,7 +246,7 @@ export default function App() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
             <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">认证 Token</span>
               <div className="flex gap-2">
@@ -259,6 +268,17 @@ export default function App() {
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">监听地址</span>
+              <select
+                value={host}
+                onChange={(e) => setHost(e.target.value as "127.0.0.1" | "0.0.0.0")}
+                className="flex h-9 w-full min-w-0 rounded-md border bg-input/30 px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+              >
+                <option value="127.0.0.1">127.0.0.1（仅本地）</option>
+                <option value="0.0.0.0">0.0.0.0（所有网卡）</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">端口</span>
               <Input
                 type="number"
@@ -278,6 +298,11 @@ export default function App() {
               </Button>
             </div>
           </div>
+          {host === "0.0.0.0" && (
+            <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              ⚠️ 监听 0.0.0.0 会暴露到所有网卡，请确保已配置强 Token 并限制防火墙端口。
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -347,8 +372,8 @@ export default function App() {
                   <Badge
                     className={
                       h.status === "success"
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                        : "border-red-500/30 bg-red-500/10 text-red-400"
+                        ? "border-emerald-600/30 bg-emerald-500/10 text-emerald-700"
+                        : "border-red-600/30 bg-red-500/10 text-red-700"
                     }
                   >
                     {h.status === "success" ? "成功" : "失败"}
@@ -374,8 +399,8 @@ export default function App() {
         <div
           className={`fixed bottom-4 right-4 rounded-md border px-3 py-2 text-xs shadow-lg ${
             toast.ok
-              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-              : "border-destructive/40 bg-destructive/15 text-destructive"
+              ? "border-emerald-600/40 bg-emerald-50 text-emerald-700"
+              : "border-red-600/40 bg-red-50 text-red-700"
           }`}
         >
           {toast.ok ? "✓" : "✗"} {toast.msg}
