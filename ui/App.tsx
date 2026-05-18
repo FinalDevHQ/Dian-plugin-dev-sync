@@ -108,9 +108,10 @@ interface HistoryResponse {
 }
 
 const API = "/plugins/dian-dev-sync/api"
+const LOCALE = navigator.language || "en-US"
 
 function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  return new Date(ts).toLocaleString(LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -158,7 +159,7 @@ export default function App() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 3000)
+    const t = setInterval(load, 5000)
     return () => clearInterval(t)
   }, [load])
 
@@ -319,17 +320,17 @@ export default function App() {
             <div className="flex flex-col gap-2">
               {sessions.map((s) => (
                 <div
-                  key={s.pluginName}
+                  key={`${s.pluginName}-${s.connectedAt}`}
                   className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs"
                 >
                   <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
                   <span className="truncate font-medium text-foreground">{s.pluginName}</span>
                   <span className="shrink-0 text-muted-foreground">
-                    连接 {fmtTime(s.connectedAt)}
+                    {fmtTime(s.connectedAt)} 连接
                   </span>
                   {s.lastSyncAt && (
                     <span className="shrink-0 text-muted-foreground">
-                      同步 {fmtTime(s.lastSyncAt)}
+                      {fmtTime(s.lastSyncAt)} 同步
                     </span>
                   )}
                   <Button
@@ -360,7 +361,7 @@ export default function App() {
             <div className="flex flex-col gap-2">
               {history.map((h) => (
                 <div
-                  key={h.id}
+                  key={`${h.id}-${h.created_at}`}
                   className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs"
                 >
                   <span
@@ -385,7 +386,7 @@ export default function App() {
                   )}
                   <span className="truncate text-muted-foreground">{h.message}</span>
                   <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                    {new Date(h.created_at).toLocaleString("zh-CN")}
+                    {new Date(h.created_at).toLocaleString(LOCALE)}
                   </span>
                 </div>
               ))}

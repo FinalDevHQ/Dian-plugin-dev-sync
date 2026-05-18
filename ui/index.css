@@ -22,7 +22,7 @@
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/* 插件 UI 白底黑字亮色主题 */
+/* 插件 UI — 亮色 / 暗色双主题，跟随系统 */
 :root {
   --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);
@@ -39,6 +39,26 @@
   --input: oklch(0 0 0 / 8%);
   --ring: oklch(0.556 0 0);
   --radius: 0.625rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.27 0 0);
+    --muted-foreground: oklch(0.65 0 0);
+    --primary: oklch(0.985 0 0);
+    --primary-foreground: oklch(0.145 0 0);
+    --accent: oklch(0.27 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(1 1 0 / 15%);
+    --input: oklch(1 1 0 / 12%);
+    --ring: oklch(0.75 0 0);
+    --radius: 0.625rem;
+  }
 }
 
 @layer base {
