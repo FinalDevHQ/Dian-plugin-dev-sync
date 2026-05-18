@@ -1,6 +1,6 @@
 {
   "name": "dian-dev-sync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Dian 插件远程开发同步服务",
   "type": "module",
   "scripts": {
