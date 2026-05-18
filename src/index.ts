@@ -229,19 +229,20 @@ export default class DevSyncPlugin {
 
   private async initHistoryStore(ctx: PluginSetupContext): Promise<void> {
     try {
-      const { configService } = await import("@dian/config");
       const { SqlitePluginStore } = await import("@dian/storage");
-      const sqlitePath = configService.settings.storage?.sqlite;
-      if (sqlitePath) {
-        this.historyStore = new SqlitePluginStore(sqlitePath);
-        await this.historyStore.createTable("dian_dev_sync_history", [
-          "plugin_name TEXT NOT NULL",
-          "status TEXT NOT NULL",
-          "message TEXT",
-          "bundle_size INTEGER",
-        ]);
-        console.info("[dian-dev-sync] history store enabled");
-      }
+      // 数据库存储在插件目录的上一层（plugins/ 根目录下），
+      // 这样自更新时 rm(plugins/dian-dev-sync/) 不会删掉它，也不会触发 EBUSY。
+      const dbPath = resolve(__dirname, "..", "dian-dev-sync-history.db");
+      this.historyStore = new SqlitePluginStore(dbPath);
+      await this.historyStore.createTable("sync_history", [
+        "plugin_name TEXT NOT NULL",
+        "status TEXT NOT NULL",
+        "message TEXT",
+        "bundle_size INTEGER",
+      ]);
+      // 将独立数据库注册到数据库查看器，使其在 UI 中以 "dian-dev-sync" 数据源展示
+      ctx.datasource("dian-dev-sync", dbPath);
+      console.info(`[dian-dev-sync] history store enabled at ${dbPath}`);
     } catch (err) {
       console.error("[dian-dev-sync] failed to init history store:", err);
     }
@@ -249,7 +250,7 @@ export default class DevSyncPlugin {
     ctx.route("GET", "/history", async (_req, reply) => {
       if (!this.historyStore) return reply.send({ ok: true, items: [] });
       try {
-        const items = await this.historyStore.query("dian_dev_sync_history", undefined, {
+        const items = await this.historyStore.query("sync_history", undefined, {
           orderBy: "id",
           order: "DESC",
           limit: 50,
@@ -271,7 +272,7 @@ export default class DevSyncPlugin {
   ): Promise<void> {
     if (!this.historyStore) return;
     try {
-      await this.historyStore.insert("dian_dev_sync_history", {
+      await this.historyStore.insert("sync_history", {
         plugin_name: pluginName,
         status,
         message,
@@ -447,6 +448,14 @@ export default class DevSyncPlugin {
       });
 
       if (existsSync(destDir)) {
+        // 自更新时，主动关闭 SQLite 连接，避免 Windows 上 EBUSY 锁文件错误。
+        // （即使 DB 已移到插件目录外，此处也保留作为安全兜底。）
+        if (resolve(destDir) === resolve(__dirname) && this.historyStore) {
+          try {
+            await this.historyStore.close();
+          } catch { /* 忽略关闭失败 */ }
+          this.historyStore = undefined;
+        }
         await rm(destDir, { recursive: true, force: true });
       }
       await mkdir(destDir, { recursive: true });
