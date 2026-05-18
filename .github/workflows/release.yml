@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # 1. 拉取主仓库（提供 packages/plugin-runtime 等本地依赖）
+      - name: Checkout Dian monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: FinalDevHQ/Dian
+          path: dian
+
+      # 2. 用本仓库内容覆盖 monorepo 里的 plugin-template 子目录
+      - name: Checkout plugin-template
+        uses: actions/checkout@v4
+        with:
+          path: dian/plugin-template
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dian/package-lock.json
+
+      # 3. 在 monorepo 根安装全部依赖（含原生模块）
+      - name: Install dependencies
+        working-directory: dian
+        run: npm ci
+
+      # 4. 构建 packages（plugin-runtime 等本地依赖需要先编译出 dist）
+      - name: Build packages
+        working-directory: dian
+        run: npm run build -w packages
+
+      # 5. 打包插件
+      - name: Pack plugin
+        working-directory: dian/plugin-template
+        run: npm run pack
+
+      # 6. 读取 zip 文件名（来自 package.json name 字段）
+      - name: Resolve zip filename
+        id: meta
+        working-directory: dian/plugin-template
+        run: |
+          NAME=$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).name")
+          echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
+
+      # 7. 创建 GitHub Release 并上传 zip
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dian/plugin-template/${{ steps.meta.outputs.zip }}
+          generate_release_notes: true
