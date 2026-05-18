@@ -44,11 +44,10 @@ export default defineConfig({
   dts: false,
   sourcemap: false,
 
-  // 默认：把 runtime 打进 bundle，单文件可移植。
-  // 若插件用到 pluginManager 单例，请改为下方注释里的 external 配置。
-  noExternal: ["@dian/plugin-runtime", "reflect-metadata"],
-  // external: ["@dian/plugin-runtime"],
-  // noExternal: ["reflect-metadata"],
+  // @dian/plugin-runtime / @dian/storage / @dian/config 均由宿主进程提供
+  // ws 依赖 Node 内置模块，不能被打包
+  external: ["@dian/plugin-runtime", "@dian/storage", "@dian/config", "ws"],
+  noExternal: ["reflect-metadata", "fflate"],
 
   // UI 由 Vite 单独构建到 dist/public/，此处无需 cpSync
 });

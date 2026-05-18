@@ -1,17 +1,11 @@
 import { useState, useEffect, useCallback, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react"
 
 // ────────────────────────────────────────────────────────────────────────────
-// 内联 shadcn 风格小组件（保持模板单文件，不依赖 components/ui）
+// 内联 shadcn 风格小组件
 // ────────────────────────────────────────────────────────────────────────────
 
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <div
-      className={`rounded-xl border bg-card text-card-foreground shadow-sm ${className}`}
-    >
-      {children}
-    </div>
-  )
+  return <div className={`rounded-xl border bg-card text-card-foreground shadow-sm ${className}`}>{children}</div>
 }
 
 function CardHeader({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -22,12 +16,17 @@ function CardContent({ children, className = "" }: { children: ReactNode; classN
   return <div className={`px-5 pb-5 ${className}`}>{children}</div>
 }
 
+function CardTitle({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <h3 className={`text-sm font-semibold ${className}`}>{children}</h3>
+}
+
+function CardDescription({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <p className={`text-xs text-muted-foreground ${className}`}>{children}</p>
+}
+
 function Label({ children, htmlFor, className = "" }: { children: ReactNode; htmlFor?: string; className?: string }) {
   return (
-    <label
-      htmlFor={htmlFor}
-      className={`text-[11px] font-medium uppercase tracking-wider text-muted-foreground ${className}`}
-    >
+    <label htmlFor={htmlFor} className={`text-[11px] font-medium uppercase tracking-wider text-muted-foreground ${className}`}>
       {children}
     </label>
   )
@@ -43,11 +42,13 @@ function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElemen
 }
 
 type ButtonVariant = "default" | "secondary" | "ghost"
+type ButtonSize = "default" | "sm"
 function Button({
   variant = "default",
+  size = "default",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
   const variants: Record<ButtonVariant, string> = {
     default:   "bg-primary text-primary-foreground hover:bg-primary/90",
     secondary: "bg-accent text-accent-foreground hover:bg-accent/80",
@@ -63,9 +64,7 @@ function Button({
 
 function Badge({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${className}`}
-    >
+    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${className}`}>
       {children}
     </span>
   )
@@ -75,63 +74,58 @@ function Badge({ children, className = "" }: { children: ReactNode; className?: 
 // 类型 + 工具
 // ────────────────────────────────────────────────────────────────────────────
 
-interface RecentPing {
-  sender: string
-  userId?: string
-  group?: string
-  time: number
+interface ConfigResponse {
+  ok: boolean
+  port: number
+  hasToken: boolean
 }
 
-interface Config { command: string; reply: string }
-
-interface Status {
-  startTime: number
-  pingCount: number
-  config: Config
-  recentPings: RecentPing[]
+interface SessionItem {
+  pluginName: string
+  connectedAt: number
+  lastSyncAt?: number
 }
 
-// 与 @dian/plugin-runtime 的 PluginPublicMeta 对齐（仅保留本页用得到的字段）
-interface PluginMetaInfo {
-  name: string
-  handlers: { method: string; pattern: string }[]
-  commands: { name: string; pattern: string; description?: string }[]
-  routes: { method: string; path: string }[]
+interface StatusResponse {
+  ok: boolean
+  sessions: SessionItem[]
+  port: number
 }
 
-const PLUGIN_NAME = "ping-pong"
-
-function fmtUptime(ms: number): string {
-  const s = Math.floor(ms / 1000)
-  const h = String(Math.floor(s / 3600)).padStart(2, "0")
-  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0")
-  const sec = String(s % 60).padStart(2, "0")
-  return `${h}:${m}:${sec}`
+interface HistoryItem {
+  id: number
+  plugin_name: string
+  status: "success" | "error"
+  message: string
+  bundle_size: number | null
+  created_at: string
 }
+
+interface HistoryResponse {
+  ok: boolean
+  items: HistoryItem[]
+}
+
+const API = "/plugins/dian-dev-sync/api"
 
 function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  })
+  return new Date(ts).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 }
-
-const API = "/plugins/ping-pong/api"
 
 // ────────────────────────────────────────────────────────────────────────────
 // 主组件
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [status, setStatus] = useState<Status | null>(null)
-  const [meta, setMeta]     = useState<PluginMetaInfo | null>(null)
-  const [error, setError]   = useState<string | null>(null)
-  const [cmd, setCmd]       = useState("")
-  const [reply, setReply]   = useState("")
+  const [config, setConfig] = useState<ConfigResponse | null>(null)
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [token, setToken] = useState("")
+  const [port, setPort] = useState(3901)
   const [saving, setSaving] = useState(false)
-  const [uptime, setUptime] = useState("—")
-  const [toast, setToast]   = useState<{ msg: string; ok: boolean } | null>(null)
+  const [showToken, setShowToken] = useState(false)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok })
@@ -140,18 +134,16 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      // 并发拉插件自身状态 + 宿主 /plugins 列表（后者拿到已注册的指令/路由详情）
-      const [data, metaList] = await Promise.all([
-        fetch(`${API}/status`).then((r) => r.json()) as Promise<Status>,
-        fetch("/plugins").then((r) => r.json()).then(
-          (j: { plugins: PluginMetaInfo[] }) => j.plugins
-        ).catch(() => [] as PluginMetaInfo[]),
+      const [cfg, status, hist] = await Promise.all([
+        fetch(`${API}/config`).then((r) => r.json()) as Promise<ConfigResponse>,
+        fetch(`${API}/status`).then((r) => r.json()) as Promise<StatusResponse>,
+        fetch(`${API}/history`).then((r) => r.json()) as Promise<HistoryResponse>,
       ])
-      setStatus(data)
-      setMeta(metaList.find((p) => p.name === PLUGIN_NAME) ?? null)
+      setConfig(cfg)
+      setSessions(status.sessions ?? [])
+      setHistory(hist.items ?? [])
+      setPort(cfg.port)
       setError(null)
-      setCmd((prev) => prev || data.config.command)
-      setReply((prev) => prev || data.config.reply)
     } catch {
       setError("无法连接到插件 API")
     }
@@ -159,32 +151,53 @@ export default function App() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 5000)
+    const t = setInterval(load, 3000)
     return () => clearInterval(t)
   }, [load])
 
-  useEffect(() => {
-    if (!status?.startTime) return
-    const start = status.startTime
-    const t = setInterval(() => setUptime(fmtUptime(Date.now() - start)), 1000)
-    return () => clearInterval(t)
-  }, [status?.startTime])
-
   const save = async () => {
-    if (!cmd.trim() || !reply.trim()) return
+    if (!token.trim() && !config?.hasToken) {
+      showToast("请输入 Token", false)
+      return
+    }
     setSaving(true)
     try {
-      await fetch(`${API}/config`, {
+      const res = await fetch(`${API}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: cmd, reply }),
+        body: JSON.stringify({ token: token.trim(), port }),
       })
-      showToast("保存成功")
-      load()
+      const data = (await res.json()) as { ok?: boolean; error?: string }
+      if (data.ok) {
+        showToast("保存成功，插件将自动重载")
+        setToken("")
+        setTimeout(() => load(), 800)
+      } else {
+        showToast(data.error ?? "保存失败", false)
+      }
     } catch {
       showToast("保存失败", false)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const disconnect = async (pluginName: string) => {
+    try {
+      const res = await fetch(`${API}/disconnect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pluginName }),
+      })
+      const data = (await res.json()) as { ok?: boolean }
+      if (data.ok) {
+        showToast("已断开")
+        load()
+      } else {
+        showToast("断开失败", false)
+      }
+    } catch {
+      showToast("断开失败", false)
     }
   }
 
@@ -193,64 +206,72 @@ export default function App() {
       {/* ── 标题 ────────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <div className="flex size-10 items-center justify-center rounded-lg border bg-card text-2xl shadow-sm">
-          🏓
+          🛠️
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-semibold leading-none">Ping-Pong</h1>
+            <h1 className="text-base font-semibold leading-none">Dian Dev Sync</h1>
             <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-              {status ? "运行中" : "加载中"}
+              {config ? "运行中" : "加载中"}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground truncate">
-            {error
-              ? error
-              : status
-              ? <>指令 <span className="font-mono text-foreground">{status.config.command}</span> → <span className="font-mono text-foreground">{status.config.reply}</span></>
-              : "—"}
+            {error ? error : `WS 端口 ${config?.port ?? "—"}`}
           </p>
         </div>
       </div>
 
       {/* ── 统计卡片 ─────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="运行时长"  value={uptime} />
-        <StatCard label="触发次数"  value={status?.pingCount ?? "—"} />
-        <StatCard label="触发指令"  value={status?.config.command ?? "—"} mono />
+        <StatCard label="WS 端口" value={config?.port ?? "—"} mono />
+        <StatCard label="当前连接" value={sessions.length} />
+        <StatCard label="Token 状态" value={config?.hasToken ? "已设置" : "未设置"} />
       </div>
 
       {/* ── 配置编辑 ─────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <Label>配置</Label>
-          <p className="text-xs text-muted-foreground">
-            「触发指令」和「回复内容」均立即生效，无需重启
-          </p>
+          <CardDescription>
+            设置认证 Token 和 WS 服务端口，保存后插件将自动重载生效
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">触发指令</span>
-              <Input
-                placeholder="!ping"
-                value={cmd}
-                onChange={(e) => setCmd(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
+              <span className="text-xs text-muted-foreground">认证 Token</span>
+              <div className="flex gap-2">
+                <Input
+                  type={showToken ? "text" : "password"}
+                  placeholder={config?.hasToken ? "已设置（输入新值覆盖）" : "请输入 Token"}
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && save()}
+                />
+                <Button
+                  variant="ghost"
+                  className="shrink-0 px-2"
+                  onClick={() => setShowToken((v) => !v)}
+                  title={showToken ? "隐藏" : "显示"}
+                >
+                  {showToken ? "🙈" : "👁️"}
+                </Button>
+              </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">回复内容</span>
+              <span className="text-xs text-muted-foreground">端口</span>
               <Input
-                placeholder="pong! 🏓"
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
+                type="number"
+                min={1024}
+                max={65535}
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value))}
               />
             </div>
             <div className="flex items-end">
               <Button
                 onClick={save}
-                disabled={saving || !cmd.trim() || !reply.trim()}
+                disabled={saving}
                 className="w-full sm:w-auto"
               >
                 {saving ? "保存中…" : "保存"}
@@ -260,93 +281,86 @@ export default function App() {
         </CardContent>
       </Card>
 
-      {/* ── 已注册：指令 + 路由 + 事件处理器 ────────────────── */}
-      <Card>
+      {/* ── 会话列表 ─────────────────────────────────────────── */}
+      <Card className="flex-1">
         <CardHeader>
-          <Label>已注册</Label>
-          <p className="text-xs text-muted-foreground">
-            从宿主 <span className="font-mono">/plugins</span> 接口实时获取，热重载后同步更新
-          </p>
+          <Label>远程开发会话</Label>
+          <CardDescription>正在通过 WebSocket 实时同步构建产物的插件项目</CardDescription>
         </CardHeader>
         <CardContent>
-          {!meta ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">暂无数据</p>
+          {sessions.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">暂无连接</p>
           ) : (
-            <div className="grid gap-4 md:grid-cols-3">
-              {/* 指令 */}
-              <RegSection title="指令" count={meta.commands.length} empty="未注册指令">
-                {meta.commands.map((c, i) => (
-                  <div key={i} className="flex flex-col gap-0.5 rounded-md border bg-muted/30 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-400">
-                        {c.name}
-                      </Badge>
-                      <code className="font-mono text-[11px] text-muted-foreground truncate">{c.pattern}</code>
-                    </div>
-                    {c.description && (
-                      <p className="text-[11px] text-muted-foreground truncate">{c.description}</p>
-                    )}
-                  </div>
-                ))}
-              </RegSection>
-
-              {/* API 路由 */}
-              <RegSection title="API 路由" count={meta.routes.length} empty="未注册路由">
-                {meta.routes.map((r, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-                    <MethodBadge method={r.method} />
-                    <code className="font-mono text-[11px] truncate">
-                      <span className="text-muted-foreground">/plugins/{PLUGIN_NAME}/api</span>
-                      <span>{r.path}</span>
-                    </code>
-                  </div>
-                ))}
-              </RegSection>
-
-              {/* 事件处理器（@Handler） */}
-              <RegSection title="事件处理器" count={meta.handlers.length} empty="未注册 @Handler">
-                {meta.handlers.map((h, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-                    <Badge className="border-violet-500/30 bg-violet-500/10 text-violet-400 font-mono">
-                      {h.method}
-                    </Badge>
-                    <code className="font-mono text-[11px] text-muted-foreground truncate">{h.pattern}</code>
-                  </div>
-                ))}
-              </RegSection>
+            <div className="flex flex-col gap-2">
+              {sessions.map((s) => (
+                <div
+                  key={s.pluginName}
+                  className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+                >
+                  <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
+                  <span className="truncate font-medium text-foreground">{s.pluginName}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    连接 {fmtTime(s.connectedAt)}
+                  </span>
+                  {s.lastSyncAt && (
+                    <span className="shrink-0 text-muted-foreground">
+                      同步 {fmtTime(s.lastSyncAt)}
+                    </span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-7 px-2 text-xs"
+                    onClick={() => disconnect(s.pluginName)}
+                  >
+                    断开
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ── 最近触发 ─────────────────────────────────────────── */}
+      {/* ── 同步历史 ─────────────────────────────────────────── */}
       <Card className="flex-1">
         <CardHeader>
-          <Label>最近触发</Label>
+          <Label>同步历史</Label>
+          <CardDescription>最近 50 次插件同步记录</CardDescription>
         </CardHeader>
         <CardContent>
-          {!status?.recentPings.length ? (
+          {history.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">暂无记录</p>
           ) : (
-            <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-1">
-              {status.recentPings.map((p, i) => (
+            <div className="flex flex-col gap-2">
+              {history.map((h) => (
                 <div
-                  key={i}
-                  className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+                  key={h.id}
+                  className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs"
                 >
-                  <span className="truncate font-medium text-foreground">{p.sender}</span>
-                  {p.userId && (
-                    <span className="shrink-0 font-mono text-muted-foreground">
-                      QQ {p.userId}
+                  <span
+                    className={`size-2 shrink-0 rounded-full ${
+                      h.status === "success" ? "bg-emerald-500" : "bg-red-500"
+                    }`}
+                  />
+                  <span className="truncate font-medium text-foreground">{h.plugin_name}</span>
+                  <Badge
+                    className={
+                      h.status === "success"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                        : "border-red-500/30 bg-red-500/10 text-red-400"
+                    }
+                  >
+                    {h.status === "success" ? "成功" : "失败"}
+                  </Badge>
+                  {h.bundle_size !== null && (
+                    <span className="shrink-0 text-muted-foreground">
+                      {(h.bundle_size / 1024).toFixed(1)} KB
                     </span>
                   )}
-                  {p.group && (
-                    <Badge className="shrink-0 border-border bg-muted text-muted-foreground">
-                      群 {p.group}
-                    </Badge>
-                  )}
+                  <span className="truncate text-muted-foreground">{h.message}</span>
                   <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                    {fmtTime(p.time)}
+                    {new Date(h.created_at).toLocaleString("zh-CN")}
                   </span>
                 </div>
               ))}
@@ -373,49 +387,6 @@ export default function App() {
 
 // ────────────────────────────────────────────────────────────────────────────
 
-function RegSection({
-  title,
-  count,
-  empty,
-  children,
-}: {
-  title: string
-  count: number
-  empty: string
-  children: ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-foreground">{title}</span>
-        <span className="text-[10px] tabular-nums text-muted-foreground">{count}</span>
-      </div>
-      {count === 0 ? (
-        <p className="rounded-md border border-dashed py-4 text-center text-[11px] text-muted-foreground">
-          {empty}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-1.5">{children}</div>
-      )}
-    </div>
-  )
-}
-
-function MethodBadge({ method }: { method: string }) {
-  const cls: Record<string, string> = {
-    GET:    "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-    POST:   "border-blue-500/30 bg-blue-500/10 text-blue-400",
-    PUT:    "border-amber-500/30 bg-amber-500/10 text-amber-400",
-    PATCH:  "border-violet-500/30 bg-violet-500/10 text-violet-400",
-    DELETE: "border-red-500/30 bg-red-500/10 text-red-400",
-  }
-  return (
-    <Badge className={`shrink-0 font-mono ${cls[method] ?? ""}`}>
-      {method}
-    </Badge>
-  )
-}
-
 function StatCard({
   label,
   value,
@@ -428,14 +399,8 @@ function StatCard({
   return (
     <Card className="px-4 py-3">
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
-        <span
-          className={`truncate text-2xl font-bold tabular-nums ${
-            mono ? "font-mono" : ""
-          }`}
-        >
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</span>
+        <span className={`truncate text-2xl font-bold tabular-nums ${mono ? "font-mono" : ""}`}>
           {value}
         </span>
       </div>

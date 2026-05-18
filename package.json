@@ -1,7 +1,7 @@
 {
-  "name": "ping-pong",
+  "name": "dian-dev-sync",
   "version": "1.0.0",
-  "description": "可自定义指令和回复的 ping-pong 插件",
+  "description": "Dian 插件远程开发同步服务",
   "type": "module",
   "scripts": {
     "build": "tsup && vite build --config ui/vite.config.ts",
@@ -9,16 +9,20 @@
     "dev:ui": "vite --config ui/vite.config.ts",
     "pack": "npm run build && node scripts/pack.mjs"
   },
-  "devDependencies": {
+  "dependencies": {
     "@dian/plugin-runtime": "file:../packages/plugin-runtime",
-    "@tailwindcss/vite": "^4.3.0",
+    "fflate": "^0.8.2",
+    "reflect-metadata": "^0.2.2",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "fflate": "^0.8.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "reflect-metadata": "^0.2.2",
     "tailwindcss": "^4.3.0",
     "tsup": "^8.5.0",
     "typescript": "^6.0.2",
