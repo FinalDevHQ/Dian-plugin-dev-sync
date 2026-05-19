@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
-import { pluginManager } from "@dian/plugin-runtime";
+import { pluginManager } from "@myfinal/plugin-runtime";
 import type { WsAuthMessage, WsPushBundleMessage, WsResponse } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -1,9 +1,9 @@
 import { defineConfig } from "tsup";
 
 /**
- * ─── 关于 @dian/plugin-runtime 是否打包进 bundle ─────────────────────────────
+ * ─── 关于 @myfinal/plugin-runtime 是否打包进 bundle ─────────────────────────────
  *
- * 默认配置把 @dian/plugin-runtime **打包进** dist/index.js（noExternal），
+ * 默认配置把 @myfinal/plugin-runtime **打包进** dist/index.js（noExternal），
  * 让插件成为单文件可移植产物，方便 ZIP 分发到任何 Dian 实例。
  *
  * 这对绝大多数用户插件都是正确选择，因为：
@@ -14,13 +14,13 @@ import { defineConfig } from "tsup";
  *     运行时被擦除，无副作用。
  *
  * ⚠️ **特殊情况：当你的插件需要访问 runtime 单例**（例如 `pluginManager`），
- * 必须把 @dian/plugin-runtime **改为 external**：
+ * 必须把 @myfinal/plugin-runtime **改为 external**：
  *
  *     // ❌ 错误：会让插件拿到自己 bundle 里的另一份空单例
- *     noExternal: ["@dian/plugin-runtime"]
+ *     noExternal: ["@myfinal/plugin-runtime"]
  *
  *     // ✅ 正确：让 Node 在运行时解析到宿主进程使用的那份 runtime
- *     external:   ["@dian/plugin-runtime"]
+ *     external:   ["@myfinal/plugin-runtime"]
  *
  * 哪些 API 受此影响（必须 external）：
  *   - `pluginManager.listPluginsMeta()`  列出所有已注册插件
@@ -44,9 +44,9 @@ export default defineConfig({
   dts: false,
   sourcemap: false,
 
-  // @dian/plugin-runtime / @dian/storage / @dian/config 均由宿主进程提供
+  // @myfinal/plugin-runtime / @myfinal/storage / @myfinal/config 均由宿主进程提供
   // ws 依赖 Node 内置模块，不能被打包
-  external: ["@dian/plugin-runtime", "@dian/storage", "@dian/config", "ws"],
+  external: ["@myfinal/plugin-runtime", "@myfinal/storage", "@myfinal/config", "ws"],
   noExternal: ["reflect-metadata", "fflate"],
 
   // UI 由 Vite 单独构建到 dist/public/，此处无需 cpSync

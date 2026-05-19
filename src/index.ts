@@ -9,7 +9,7 @@ import {
   Plugin,
   pluginManager,
   type PluginSetupContext,
-} from "@dian/plugin-runtime";
+} from "@myfinal/plugin-runtime";
 
 import { PKG_VERSION } from "./version.js";
 import {
@@ -68,7 +68,7 @@ export default class DevSyncPlugin {
   private authFailures = new Map<string, { count: number; firstAt: number }>();
 
   // 历史存储
-  private historyStore: import("@dian/storage").SqlitePluginStore | null = null;
+  private historyStore: import("@myfinal/storage").SqlitePluginStore | null = null;
 
   // ── 生命周期 ──────────────────────────────────────────────────────────────
 
@@ -181,7 +181,7 @@ export default class DevSyncPlugin {
 
   private async initHistoryStore(ctx: PluginSetupContext): Promise<void> {
     try {
-      const { SqlitePluginStore } = await import("@dian/storage");
+      const { SqlitePluginStore } = await import("@myfinal/storage");
       const dbPath = resolve(__dirname, "..", "dian-dev-sync-history.db");
       this.historyStore = new SqlitePluginStore(dbPath);
       await this.historyStore.createTable("sync_history", [
