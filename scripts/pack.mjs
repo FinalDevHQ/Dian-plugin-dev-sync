@@ -47,6 +47,9 @@ if (Object.keys(files).length === 0) {
   process.exit(1);
 }
 
+// 把 package.json 放到 zip 根目录，供运行时读取版本号等元数据
+files["package.json"] = readFileSync("./package.json");
+
 // 转换为 fflate 所需格式：{ 路径: [Uint8Array, options] }
 /** @type {import("fflate").AsyncZippable} */
 const zippable = {};
