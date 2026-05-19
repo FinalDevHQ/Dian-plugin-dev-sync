@@ -1,133 +1,74 @@
 import "reflect-metadata";
-import { WebSocket, type WebSocketServer } from "ws";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unzip } from "fflate";
+import { WebSocket } from "ws";
 import {
   Plugin,
   pluginManager,
   type PluginSetupContext,
 } from "@dian/plugin-runtime";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// ── 类型 ──────────────────────────────────────────────────────────────────────
-
-interface PluginConfig {
-  token: string;
-  port: number;
-  host: "127.0.0.1" | "0.0.0.0";
-}
-
-interface DevSession {
-  socket: WebSocket;
-  connectedAt: number;
-  lastSyncAt?: number;
-  pluginName: string;
-}
-
-interface WsAuthMessage {
-  type: "auth";
-  token: string;
-  pluginName: string;
-}
-
-interface WsPushBundleMessage {
-  type: "push-bundle";
-  pluginName: string;
-  bundle: string;
-}
-
-interface WsResponse {
-  type: string;
-  ok: boolean;
-  message?: string;
-  [key: string]: unknown;
-}
-
-interface GlobalWssEntry {
-  wss: WebSocketServer;
-  instance: DevSyncPlugin;
-}
+import { PKG_VERSION } from "./version.js";
+import {
+  type PluginConfig,
+  DEFAULT_CONFIG,
+  loadConfig,
+  saveConfig,
+} from "./config.js";
+import {
+  type DevSession,
+  type GlobalWssEntry,
+} from "./types.js";
+import {
+  isAuthMsg,
+  isPushBundleMsg,
+  safePluginName,
+  send,
+  getPluginsDir,
+  generateToken,
+} from "./utils.js";
+import {
+  MAX_BUNDLE_BYTES,
+  AUTH_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  MAX_HISTORY_RECORDS,
+  RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_MAX_FAILS,
+} from "./constants.js";
 
 declare global {
+  // eslint-disable-next-line no-var
   var __dianDevSyncWss: GlobalWssEntry | undefined;
 }
 
-// ── 常量 ──────────────────────────────────────────────────────────────────────
-
-const DEFAULT_CONFIG: PluginConfig = { token: "", port: 3901, host: "127.0.0.1" };
-const CONFIG_PATH = resolve(__dirname, "config.json");
-const MAX_BUNDLE_BYTES = 100 * 1024 * 1024;
-const AUTH_TIMEOUT_MS = 5000;
-
-// ── 工具函数 ──────────────────────────────────────────────────────────────────
-
-function isAuthMsg(data: unknown): data is WsAuthMessage {
-  const d = data as Record<string, unknown>;
-  return d?.type === "auth" && typeof d?.token === "string" && typeof d?.pluginName === "string";
-}
-
-function isPushBundleMsg(data: unknown): data is WsPushBundleMessage {
-  const d = data as Record<string, unknown>;
-  return d?.type === "push-bundle" && typeof d?.pluginName === "string" && typeof d?.bundle === "string";
-}
-
-function safePluginName(name: unknown): string | null {
-  if (typeof name !== "string") return null;
-  return /^[\w-]+$/.test(name) ? name : null;
-}
-
-function send(socket: WebSocket, data: WsResponse): void {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(data));
-  }
-}
-
-function getPluginsDir(): string {
-  const fromEnv = process.env.DIAN_PLUGINS_DIR;
-  if (fromEnv) return resolve(fromEnv);
-  const fromManager = pluginManager.pluginsDir;
-  if (fromManager) return fromManager;
-  const first = pluginManager.plugins[0]?.filePath;
-  if (first) return dirname(first);
-  return resolve(__dirname, "../../../plugins");
-}
-
-function loadConfig(): PluginConfig {
-  try {
-    if (existsSync(CONFIG_PATH)) {
-      const data = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<PluginConfig>;
-      return { ...DEFAULT_CONFIG, ...data };
-    }
-  } catch (e) {
-    console.warn("[dian-dev-sync] failed to load config:", e);
-  }
-  return { ...DEFAULT_CONFIG };
-}
-
-async function saveConfig(cfg: PluginConfig): Promise<void> {
-  await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
-}
-
-// ── 插件主体 ──────────────────────────────────────────────────────────────────
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 @Plugin({
   name: "dian-dev-sync",
-  description: "Dian 插件远程开发同步服务",
-  version: "1.0.0",
+  description: "Dian 插件远程开发同步服务（支持热更新）",
+  version: PKG_VERSION,
   author: "FinalDev",
   icon: "🛠️",
 })
 export default class DevSyncPlugin {
-  private wss: WebSocketServer | null = null;
+  private wss: import("ws").WebSocketServer | null = null;
   private sessions = new Map<string, DevSession>();
   private token = "";
   private port = 3901;
   private host: "127.0.0.1" | "0.0.0.0" = "127.0.0.1";
   private config = loadConfig();
+
+  // 并发写锁：per-plugin
+  private writeLocks = new Map<string, Promise<void>>();
+
+  // 认证频率限制
+  private authFailures = new Map<string, { count: number; firstAt: number }>();
+
+  // 历史存储
+  private historyStore: import("@dian/storage").SqlitePluginStore | null = null;
 
   // ── 生命周期 ──────────────────────────────────────────────────────────────
 
@@ -160,6 +101,7 @@ export default class DevSyncPlugin {
     const prev = globalThis.__dianDevSyncWss;
     if (!prev?.wss) return;
     console.info("[dian-dev-sync] closing previous WSS before starting new one");
+    if (prev.heartbeatTimer) clearInterval(prev.heartbeatTimer);
     prev.wss.removeAllListeners();
     prev.wss.clients?.forEach((client) => client.terminate?.());
     await new Promise<void>((resolve) => prev.wss.close(() => resolve()));
@@ -177,7 +119,7 @@ export default class DevSyncPlugin {
         connectedAt: s.connectedAt,
         lastSyncAt: s.lastSyncAt,
       }));
-      return reply.send({ ok: true, sessions: list, port: this.port });
+      return reply.send({ ok: true, sessions: list, port: this.port, host: this.host });
     });
 
     ctx.route("GET", "/config", (_req, reply) => {
@@ -208,6 +150,18 @@ export default class DevSyncPlugin {
       }
     });
 
+    // 生成随机 Token
+    ctx.route("POST", "/generate-token", async (_req, reply) => {
+      const newToken = generateToken();
+      const next: PluginConfig = { ...this.config, token: newToken };
+      await saveConfig(next);
+      this.config = next;
+      reply.send({ ok: true, token: newToken });
+      pluginManager.reload("dian-dev-sync").catch((err: unknown) => {
+        console.error("[dian-dev-sync] self-reload failed:", err);
+      });
+    });
+
     ctx.route("POST", "/disconnect", (req, reply) => {
       const body = req.body as Record<string, unknown>;
       const pluginName = safePluginName(body?.pluginName);
@@ -225,13 +179,9 @@ export default class DevSyncPlugin {
 
   // ── 历史记录 ─────────────────────────────────────────────────────────────
 
-  private historyStore: import("@dian/storage").SqlitePluginStore | null = null;
-
   private async initHistoryStore(ctx: PluginSetupContext): Promise<void> {
     try {
       const { SqlitePluginStore } = await import("@dian/storage");
-      // 数据库存储在插件目录的上一层（plugins/ 根目录下），
-      // 这样自更新时 rm(plugins/dian-dev-sync/) 不会删掉它，也不会触发 EBUSY。
       const dbPath = resolve(__dirname, "..", "dian-dev-sync-history.db");
       this.historyStore = new SqlitePluginStore(dbPath);
       await this.historyStore.createTable("sync_history", [
@@ -240,7 +190,6 @@ export default class DevSyncPlugin {
         "message TEXT",
         "bundle_size INTEGER",
       ]);
-      // 将独立数据库注册到数据库查看器，使其在 UI 中以 "dian-dev-sync" 数据源展示
       ctx.datasource("dian-dev-sync", dbPath);
       console.info(`[dian-dev-sync] history store enabled at ${dbPath}`);
     } catch (err) {
@@ -260,9 +209,19 @@ export default class DevSyncPlugin {
         return reply.code(500).send({ ok: false, error: String(err) });
       }
     });
+
+    ctx.route("DELETE", "/history", async (_req, reply) => {
+      if (!this.historyStore) return reply.send({ ok: true });
+      try {
+        await this.historyStore.delete("sync_history");
+        return reply.send({ ok: true });
+      } catch (err) {
+        return reply.code(500).send({ ok: false, error: String(err) });
+      }
+    });
   }
 
-  // ── 记录历史辅助 ─────────────────────────────────────────────────────────
+  // ── 记录历史 + 自动裁剪 ───────────────────────────────────────────────────
 
   private async recordHistory(
     pluginName: string,
@@ -278,9 +237,27 @@ export default class DevSyncPlugin {
         message,
         bundle_size: bundleSize ?? null,
       });
+      await this.pruneHistory();
     } catch (e) {
       console.error("[dian-dev-sync] failed to record history:", e);
     }
+  }
+
+  private async pruneHistory(): Promise<void> {
+    if (!this.historyStore) return;
+    try {
+      const items = await this.historyStore.query("sync_history", undefined, {
+        orderBy: "id",
+        order: "DESC",
+        limit: MAX_HISTORY_RECORDS + 1,
+      });
+      if (items.length <= MAX_HISTORY_RECORDS) return;
+      const cutoffId = (items[items.length - 1] as Record<string, unknown>).id;
+      const raw = this.historyStore as unknown as {
+        db: { prepare(sql: string): { run(...args: unknown[]): void } };
+      };
+      raw.db.prepare("DELETE FROM sync_history WHERE id <= ?").run(cutoffId);
+    } catch { /* 裁剪失败不影响主逻辑 */ }
   }
 
   // ── WebSocket 服务 ───────────────────────────────────────────────────────
@@ -295,13 +272,29 @@ export default class DevSyncPlugin {
       return;
     }
 
-    globalThis.__dianDevSyncWss = { wss: this.wss, instance: this };
+    const heartbeatTimer = setInterval(() => {
+      this.sessions.forEach((session, name) => {
+        if (!session.alive) {
+          console.info(`[dian-dev-sync] plugin "${name}" heartbeat timeout, terminating`);
+          session.socket.terminate();
+          this.sessions.delete(name);
+          return;
+        }
+        session.alive = false;
+        if (session.socket.readyState === WebSocket.OPEN) {
+          session.socket.ping();
+        }
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    globalThis.__dianDevSyncWss = { wss: this.wss, instance: this, heartbeatTimer };
 
     this.wss.on("error", (err) => {
       console.error(`[dian-dev-sync] WSS error:`, err.message);
     });
 
     this.wss.on("close", () => {
+      clearInterval(heartbeatTimer);
       console.info("[dian-dev-sync] WSS closed");
       if (globalThis.__dianDevSyncWss?.instance === this) {
         globalThis.__dianDevSyncWss = undefined;
@@ -313,12 +306,13 @@ export default class DevSyncPlugin {
       console.warn("[dian-dev-sync] DIAN_DEV_SYNC_TOKEN not set — set via env or Web UI");
     }
 
-    this.wss.on("connection", (socket) => this.handleConnection(socket));
+    this.wss.on("connection", (socket, req) => this.handleConnection(socket, req));
   }
 
   // ── WS 连接处理 ──────────────────────────────────────────────────────────
 
-  private handleConnection(socket: WebSocket): void {
+  private handleConnection(socket: WebSocket, req: import("http").IncomingMessage): void {
+    const remoteIp = req.socket.remoteAddress ?? "unknown";
     let authed = false;
     let sessionPluginName = "";
     let authTimer: NodeJS.Timeout | null = null;
@@ -330,6 +324,13 @@ export default class DevSyncPlugin {
       }
     }, AUTH_TIMEOUT_MS);
 
+    socket.on("pong", () => {
+      if (sessionPluginName) {
+        const session = this.sessions.get(sessionPluginName);
+        if (session) session.alive = true;
+      }
+    });
+
     socket.on("message", async (raw) => {
       let data: unknown;
       try {
@@ -340,7 +341,7 @@ export default class DevSyncPlugin {
       }
 
       if (!authed) {
-        const name = this.handleAuth(socket, data);
+        const name = this.handleAuth(socket, data, remoteIp);
         if (name) {
           authed = true;
           sessionPluginName = name;
@@ -368,10 +369,40 @@ export default class DevSyncPlugin {
     });
   }
 
+  // ── 认证频率限制 ──────────────────────────────────────────────────────────
+
+  private isRateLimited(ip: string): boolean {
+    const entry = this.authFailures.get(ip);
+    if (!entry) return false;
+    if (Date.now() - entry.firstAt > RATE_LIMIT_WINDOW_MS) {
+      this.authFailures.delete(ip);
+      return false;
+    }
+    return entry.count >= RATE_LIMIT_MAX_FAILS;
+  }
+
+  private recordAuthFailure(ip: string): void {
+    const entry = this.authFailures.get(ip);
+    if (!entry || Date.now() - entry.firstAt > RATE_LIMIT_WINDOW_MS) {
+      this.authFailures.set(ip, { count: 1, firstAt: Date.now() });
+    } else {
+      entry.count++;
+    }
+  }
+
+  private clearAuthFailure(ip: string): void {
+    this.authFailures.delete(ip);
+  }
+
   // ── 认证 ─────────────────────────────────────────────────────────────────
 
-  /** 返回值：认证成功返回 pluginName，否则返回 null */
-  private handleAuth(socket: WebSocket, data: unknown): string | null {
+  private handleAuth(socket: WebSocket, data: unknown, remoteIp: string): string | null {
+    if (this.isRateLimited(remoteIp)) {
+      send(socket, { type: "auth-result", ok: false, message: "too many failed attempts, try again later" });
+      socket.close();
+      return null;
+    }
+
     if (!isAuthMsg(data)) {
       send(socket, { type: "error", ok: false, message: "expected auth message" });
       socket.close();
@@ -383,6 +414,7 @@ export default class DevSyncPlugin {
       return null;
     }
     if (data.token !== this.token) {
+      this.recordAuthFailure(remoteIp);
       send(socket, { type: "auth-result", ok: false, message: "invalid token" });
       socket.close();
       return null;
@@ -394,6 +426,8 @@ export default class DevSyncPlugin {
       return null;
     }
 
+    this.clearAuthFailure(remoteIp);
+
     const existing = this.sessions.get(name);
     if (existing) {
       send(existing.socket, { type: "error", ok: false, message: "replaced by new connection" });
@@ -401,10 +435,30 @@ export default class DevSyncPlugin {
       this.sessions.delete(name);
     }
 
-    this.sessions.set(name, { socket, connectedAt: Date.now(), pluginName: name });
+    this.sessions.set(name, { socket, connectedAt: Date.now(), pluginName: name, alive: true });
     send(socket, { type: "auth-result", ok: true });
-    console.info(`[dian-dev-sync] plugin "${name}" connected`);
+    console.info(`[dian-dev-sync] plugin "${name}" connected from ${remoteIp}`);
     return name;
+  }
+
+  // ── 并发写锁 ─────────────────────────────────────────────────────────────
+
+  private async acquireWriteLock(pluginName: string): Promise<void> {
+    while (this.writeLocks.has(pluginName)) {
+      await this.writeLocks.get(pluginName);
+    }
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => { resolve = r; });
+    (promise as unknown as { _resolve: () => void })._resolve = resolve;
+    this.writeLocks.set(pluginName, promise);
+  }
+
+  private releaseWriteLock(pluginName: string): void {
+    const lock = this.writeLocks.get(pluginName);
+    this.writeLocks.delete(pluginName);
+    if (lock) {
+      (lock as unknown as { _resolve: () => void })._resolve();
+    }
   }
 
   // ── 推送处理 ─────────────────────────────────────────────────────────────
@@ -424,6 +478,8 @@ export default class DevSyncPlugin {
       send(socket, { type: "error", ok: false, message: "pluginName mismatch" });
       return;
     }
+
+    await this.acquireWriteLock(name);
 
     const pluginsDir = getPluginsDir();
     const destDir = resolve(pluginsDir, name);
@@ -448,13 +504,11 @@ export default class DevSyncPlugin {
       });
 
       if (existsSync(destDir)) {
-        // 自更新时，主动关闭 SQLite 连接，避免 Windows 上 EBUSY 锁文件错误。
-        // （即使 DB 已移到插件目录外，此处也保留作为安全兜底。）
         if (resolve(destDir) === resolve(__dirname) && this.historyStore) {
           try {
             await this.historyStore.close();
           } catch { /* 忽略关闭失败 */ }
-          this.historyStore = undefined;
+          this.historyStore = null;
         }
         await rm(destDir, { recursive: true, force: true });
       }
@@ -494,6 +548,7 @@ export default class DevSyncPlugin {
       await this.recordHistory(name, "error", msg, data.bundle.length);
     } finally {
       pluginManager.setInstallLock(false);
+      this.releaseWriteLock(name);
     }
   }
 }

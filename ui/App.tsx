@@ -1,77 +1,11 @@
-import { useState, useEffect, useCallback, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
+import {
+  Card, CardHeader, CardContent, CardDescription, Label, Input, Button, Badge, StatCard,
+} from "./components"
+import { fmtTime, fmtDuration, copyToClipboard } from "./utils"
 
 // ────────────────────────────────────────────────────────────────────────────
-// 内联 shadcn 风格小组件
-// ────────────────────────────────────────────────────────────────────────────
-
-function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-xl border bg-card text-card-foreground shadow-sm ${className}`}>{children}</div>
-}
-
-function CardHeader({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`flex flex-col gap-1 px-5 pt-4 pb-2 ${className}`}>{children}</div>
-}
-
-function CardContent({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`px-5 pb-5 ${className}`}>{children}</div>
-}
-
-function CardTitle({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <h3 className={`text-sm font-semibold ${className}`}>{children}</h3>
-}
-
-function CardDescription({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <p className={`text-xs text-muted-foreground ${className}`}>{children}</p>
-}
-
-function Label({ children, htmlFor, className = "" }: { children: ReactNode; htmlFor?: string; className?: string }) {
-  return (
-    <label htmlFor={htmlFor} className={`text-[11px] font-medium uppercase tracking-wider text-muted-foreground ${className}`}>
-      {children}
-    </label>
-  )
-}
-
-function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={`flex h-9 w-full min-w-0 rounded-md border bg-input/30 px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-    />
-  )
-}
-
-type ButtonVariant = "default" | "secondary" | "ghost"
-type ButtonSize = "default" | "sm"
-function Button({
-  variant = "default",
-  size = "default",
-  className = "",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
-  const variants: Record<ButtonVariant, string> = {
-    default:   "bg-primary text-primary-foreground hover:bg-primary/90",
-    secondary: "bg-accent text-accent-foreground hover:bg-accent/80",
-    ghost:     "hover:bg-accent hover:text-accent-foreground",
-  }
-  return (
-    <button
-      {...props}
-      className={`inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${variants[variant]} ${className}`}
-    />
-  )
-}
-
-function Badge({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${className}`}>
-      {children}
-    </span>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// 类型 + 工具
+// 类型
 // ────────────────────────────────────────────────────────────────────────────
 
 interface ConfigResponse {
@@ -108,11 +42,6 @@ interface HistoryResponse {
 }
 
 const API = "/plugins/dian-dev-sync/api"
-const LOCALE = navigator.language || "en-US"
-
-function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleString(LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // 主组件
@@ -128,8 +57,10 @@ export default function App() {
   const [host, setHost] = useState<"127.0.0.1" | "0.0.0.0">("127.0.0.1")
   const [saving, setSaving] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const [genLoading, setGenLoading] = useState(false)
   const initializedRef = useRef(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [now, setNow] = useState(Date.now())
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok })
@@ -163,6 +94,12 @@ export default function App() {
     return () => clearInterval(t)
   }, [load])
 
+  // 实时刷新连接时长
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
   const save = async () => {
     if (!token.trim() && !config?.hasToken) {
       showToast("请输入 Token", false)
@@ -188,6 +125,42 @@ export default function App() {
       showToast("保存失败", false)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const generateToken = async () => {
+    setGenLoading(true)
+    try {
+      const res = await fetch(`${API}/generate-token`, { method: "POST" })
+      const data = (await res.json()) as { ok?: boolean; token?: string; error?: string }
+      if (data.ok && data.token) {
+        const copied = await copyToClipboard(data.token)
+        showToast(copied ? "新 Token 已生成并复制到剪贴板" : "新 Token 已生成")
+        initializedRef.current = false
+        setTimeout(() => load(), 800)
+      } else {
+        showToast(data.error ?? "生成失败", false)
+      }
+    } catch {
+      showToast("生成失败", false)
+    } finally {
+      setGenLoading(false)
+    }
+  }
+
+  const clearHistory = async () => {
+    if (!confirm("确定要清空所有同步历史记录吗？")) return
+    try {
+      const res = await fetch(`${API}/history`, { method: "DELETE" })
+      const data = (await res.json()) as { ok?: boolean }
+      if (data.ok) {
+        showToast("历史记录已清空")
+        load()
+      } else {
+        showToast("清空失败", false)
+      }
+    } catch {
+      showToast("清空失败", false)
     }
   }
 
@@ -247,7 +220,7 @@ export default function App() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto_auto]">
             <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">认证 Token</span>
               <div className="flex gap-2">
@@ -265,6 +238,15 @@ export default function App() {
                   title={showToken ? "隐藏" : "显示"}
                 >
                   {showToken ? "🙈" : "👁️"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="shrink-0 px-2 text-xs"
+                  onClick={generateToken}
+                  disabled={genLoading}
+                  title="自动生成安全的随机 Token"
+                >
+                  {genLoading ? "…" : "🎲 随机生成"}
                 </Button>
               </div>
             </div>
@@ -326,7 +308,7 @@ export default function App() {
                   <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
                   <span className="truncate font-medium text-foreground">{s.pluginName}</span>
                   <span className="shrink-0 text-muted-foreground">
-                    {fmtTime(s.connectedAt)} 连接
+                    已连接 {fmtDuration(now - s.connectedAt)}
                   </span>
                   {s.lastSyncAt && (
                     <span className="shrink-0 text-muted-foreground">
@@ -351,8 +333,22 @@ export default function App() {
       {/* ── 同步历史 ─────────────────────────────────────────── */}
       <Card className="flex-1">
         <CardHeader>
-          <Label>同步历史</Label>
-          <CardDescription>最近 50 次插件同步记录</CardDescription>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1">
+              <Label>同步历史</Label>
+              <CardDescription>最近 50 次插件同步记录</CardDescription>
+            </div>
+            {history.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-red-600 hover:bg-red-50"
+                onClick={clearHistory}
+              >
+                清空记录
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {history.length === 0 ? (
@@ -386,7 +382,7 @@ export default function App() {
                   )}
                   <span className="truncate text-muted-foreground">{h.message}</span>
                   <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                    {new Date(h.created_at).toLocaleString(LOCALE)}
+                    {new Date(h.created_at).toLocaleString(navigator.language || "en-US")}
                   </span>
                 </div>
               ))}
@@ -408,28 +404,5 @@ export default function App() {
         </div>
       )}
     </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-
-function StatCard({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string
-  value: string | number
-  mono?: boolean
-}) {
-  return (
-    <Card className="px-4 py-3">
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className={`truncate text-2xl font-bold tabular-nums ${mono ? "font-mono" : ""}`}>
-          {value}
-        </span>
-      </div>
-    </Card>
   )
 }
