@@ -3,6 +3,7 @@ import {
   Card, CardHeader, CardContent, CardDescription, Label, Input, Button, Badge, StatCard,
 } from "./components"
 import { fmtTime, fmtDuration, copyToClipboard } from "./utils"
+import { apiFetch } from "./api"
 
 // ────────────────────────────────────────────────────────────────────────────
 // 类型
@@ -70,9 +71,9 @@ export default function App() {
   const load = useCallback(async () => {
     try {
       const [cfg, status, hist] = await Promise.all([
-        fetch(`${API}/config`).then((r) => r.json()) as Promise<ConfigResponse>,
-        fetch(`${API}/status`).then((r) => r.json()) as Promise<StatusResponse>,
-        fetch(`${API}/history`).then((r) => r.json()) as Promise<HistoryResponse>,
+        apiFetch(`${API}/config`).then((r) => r.json()) as Promise<ConfigResponse>,
+        apiFetch(`${API}/status`).then((r) => r.json()) as Promise<StatusResponse>,
+        apiFetch(`${API}/history`).then((r) => r.json()) as Promise<HistoryResponse>,
       ])
       setConfig(cfg)
       setSessions(status.sessions ?? [])
@@ -107,7 +108,7 @@ export default function App() {
     }
     setSaving(true)
     try {
-      const res = await fetch(`${API}/config`, {
+      const res = await apiFetch(`${API}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: token.trim(), port, host }),
@@ -131,7 +132,7 @@ export default function App() {
   const generateToken = async () => {
     setGenLoading(true)
     try {
-      const res = await fetch(`${API}/generate-token`, { method: "POST" })
+      const res = await apiFetch(`${API}/generate-token`, { method: "POST" })
       const data = (await res.json()) as { ok?: boolean; token?: string; error?: string }
       if (data.ok && data.token) {
         const copied = await copyToClipboard(data.token)
@@ -151,7 +152,7 @@ export default function App() {
   const clearHistory = async () => {
     if (!confirm("确定要清空所有同步历史记录吗？")) return
     try {
-      const res = await fetch(`${API}/history`, { method: "DELETE" })
+      const res = await apiFetch(`${API}/history`, { method: "DELETE" })
       const data = (await res.json()) as { ok?: boolean }
       if (data.ok) {
         showToast("历史记录已清空")
@@ -166,7 +167,7 @@ export default function App() {
 
   const disconnect = async (pluginName: string) => {
     try {
-      const res = await fetch(`${API}/disconnect`, {
+      const res = await apiFetch(`${API}/disconnect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pluginName }),

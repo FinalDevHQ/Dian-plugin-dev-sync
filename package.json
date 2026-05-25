@@ -10,7 +10,7 @@
     "pack": "npm run build && node scripts/pack.mjs"
   },
   "dependencies": {
-    "@myfinal/plugin-runtime": "^0.1.0",
+    "@myfinal/plugin-runtime": "^0.2.7",
     "fflate": "^0.8.2",
     "reflect-metadata": "^0.2.2",
     "ws": "^8.18.2"

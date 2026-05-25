@@ -189,7 +189,7 @@ export default class DevSyncPlugin {
         "status TEXT NOT NULL",
         "message TEXT",
         "bundle_size INTEGER",
-      ]);
+      ], "dian-dev-sync");
       ctx.datasource("dian-dev-sync", dbPath);
       console.info(`[dian-dev-sync] history store enabled at ${dbPath}`);
     } catch (err) {
