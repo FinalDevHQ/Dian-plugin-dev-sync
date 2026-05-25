@@ -1,8 +1,7 @@
 import "reflect-metadata";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, sep, resolve, dirname } from "node:path";
 import { unzip } from "fflate";
 import { WebSocket } from "ws";
 import {
@@ -44,8 +43,6 @@ declare global {
   var __dianDevSyncWss: GlobalWssEntry | undefined;
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
 @Plugin({
   name: "dian-dev-sync",
   description: "Dian 插件远程开发同步服务（支持热更新）",
@@ -67,8 +64,13 @@ export default class DevSyncPlugin {
   // 认证频率限制
   private authFailures = new Map<string, { count: number; firstAt: number }>();
 
-  // 历史存储
-  private historyStore: import("@myfinal/storage").SqlitePluginStore | null = null;
+  // 历史存储（通过路由注入获取引用）
+  private historyStore: {
+    createTable: (tableName: string, columns: string[], pluginName?: string) => Promise<void>;
+    insert: (tableName: string, data: Record<string, unknown>) => Promise<void>;
+    query: (tableName: string, params?: Record<string, unknown>, options?: { limit?: number; orderBy?: string; order?: "ASC" | "DESC" }) => Promise<Record<string, unknown>[]>;
+    delete: (tableName: string, params?: Record<string, unknown>) => Promise<number>;
+  } | null = null;
 
   // ── 生命周期 ──────────────────────────────────────────────────────────────
 
@@ -76,7 +78,6 @@ export default class DevSyncPlugin {
     this.applyEnvConfig();
     await this.closePreviousWss();
     this.setupRoutes(ctx);
-    await this.initHistoryStore(ctx);
     this.startWebSocketServer(ctx);
   }
 
@@ -175,31 +176,41 @@ export default class DevSyncPlugin {
       }
       return reply.send({ ok: true });
     });
+
+    // 历史记录路由
+    this.setupHistoryRoutes(ctx);
   }
 
   // ── 历史记录 ─────────────────────────────────────────────────────────────
 
-  private async initHistoryStore(ctx: PluginSetupContext): Promise<void> {
-    try {
-      const { SqlitePluginStore } = await import("@myfinal/storage");
-      const dbPath = resolve(__dirname, "..", "dian-dev-sync-history.db");
-      this.historyStore = new SqlitePluginStore(dbPath);
-      await this.historyStore.createTable("sync_history", [
-        "plugin_name TEXT NOT NULL",
-        "status TEXT NOT NULL",
-        "message TEXT",
-        "bundle_size INTEGER",
-      ], "dian-dev-sync");
-      ctx.datasource("dian-dev-sync", dbPath);
-      console.info(`[dian-dev-sync] history store enabled at ${dbPath}`);
-    } catch (err) {
-      console.error("[dian-dev-sync] failed to init history store:", err);
-    }
-
-    ctx.route("GET", "/history", async (_req, reply) => {
-      if (!this.historyStore) return reply.send({ ok: true, items: [] });
+  private setupHistoryRoutes(ctx: PluginSetupContext): void {
+    const ensureTable = async (req: unknown): Promise<boolean> => {
+      if (this.historyStore) return true;
+      const store = (req as unknown as Record<string, unknown>).pluginStore as {
+        createTable: (tableName: string, columns: string[], pluginName?: string) => Promise<void>;
+        insert: (tableName: string, data: Record<string, unknown>) => Promise<void>;
+        query: (tableName: string, params?: Record<string, unknown>, options?: { limit?: number; orderBy?: string; order?: "ASC" | "DESC" }) => Promise<Record<string, unknown>[]>;
+        delete: (tableName: string, params?: Record<string, unknown>) => Promise<number>;
+      } | undefined;
+      if (!store) return false;
       try {
-        const items = await this.historyStore.query("sync_history", undefined, {
+        await store.createTable("dian_dev_sync_history", [
+          "plugin_name TEXT NOT NULL",
+          "status TEXT NOT NULL",
+          "message TEXT",
+          "bundle_size INTEGER",
+        ], "dian-dev-sync");
+        this.historyStore = store;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    ctx.route("GET", "/history", async (req, reply) => {
+      if (!(await ensureTable(req))) return reply.send({ ok: true, items: [] });
+      try {
+        const items = await this.historyStore!.query("dian_dev_sync_history", undefined, {
           orderBy: "id",
           order: "DESC",
           limit: 50,
@@ -210,10 +221,10 @@ export default class DevSyncPlugin {
       }
     });
 
-    ctx.route("DELETE", "/history", async (_req, reply) => {
-      if (!this.historyStore) return reply.send({ ok: true });
+    ctx.route("DELETE", "/history", async (req, reply) => {
+      if (!(await ensureTable(req))) return reply.send({ ok: true });
       try {
-        await this.historyStore.delete("sync_history");
+        await this.historyStore!.delete("dian_dev_sync_history");
         return reply.send({ ok: true });
       } catch (err) {
         return reply.code(500).send({ ok: false, error: String(err) });
@@ -231,7 +242,7 @@ export default class DevSyncPlugin {
   ): Promise<void> {
     if (!this.historyStore) return;
     try {
-      await this.historyStore.insert("sync_history", {
+      await this.historyStore.insert("dian_dev_sync_history", {
         plugin_name: pluginName,
         status,
         message,
@@ -246,17 +257,21 @@ export default class DevSyncPlugin {
   private async pruneHistory(): Promise<void> {
     if (!this.historyStore) return;
     try {
-      const items = await this.historyStore.query("sync_history", undefined, {
+      const items = await this.historyStore.query("dian_dev_sync_history", undefined, {
         orderBy: "id",
         order: "DESC",
         limit: MAX_HISTORY_RECORDS + 1,
       });
       if (items.length <= MAX_HISTORY_RECORDS) return;
       const cutoffId = (items[items.length - 1] as Record<string, unknown>).id;
-      const raw = this.historyStore as unknown as {
-        db: { prepare(sql: string): { run(...args: unknown[]): void } };
-      };
-      raw.db.prepare("DELETE FROM sync_history WHERE id <= ?").run(cutoffId);
+      // 使用 delete 方法删除旧记录（简化版：删除所有 id <= cutoffId 的记录）
+      // 注意：这里需要通过 WHERE 条件删除，但 PluginStore 没有直接支持
+      // 暂时使用简化方式：删除超出限制的记录数量
+      const excessCount = items.length - MAX_HISTORY_RECORDS;
+      for (let i = 0; i < excessCount; i++) {
+        const id = (items[MAX_HISTORY_RECORDS + i] as Record<string, unknown>).id;
+        await this.historyStore.delete("dian_dev_sync_history", { id });
+      }
     } catch { /* 裁剪失败不影响主逻辑 */ }
   }
 
@@ -504,12 +519,6 @@ export default class DevSyncPlugin {
       });
 
       if (existsSync(destDir)) {
-        if (resolve(destDir) === resolve(__dirname) && this.historyStore) {
-          try {
-            await this.historyStore.close();
-          } catch { /* 忽略关闭失败 */ }
-          this.historyStore = null;
-        }
         await rm(destDir, { recursive: true, force: true });
       }
       await mkdir(destDir, { recursive: true });
