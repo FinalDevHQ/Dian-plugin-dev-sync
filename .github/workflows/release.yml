@@ -45,6 +45,13 @@ jobs:
           npm ci
           npm run pack
 
+      - name: Resolve zip filename
+        if: steps.check.outputs.exists == 'false'
+        id: meta
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
+
       - name: Create tag
         if: steps.check.outputs.exists == 'false'
         run: |
@@ -58,5 +65,87 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.pkg.outputs.version }}
-          files: "*.zip"
+          files: ${{ steps.meta.outputs.zip }}
           generate_release_notes: true
+
+      - name: Update plugin index via PR
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.INDEX_REPO_TOKEN }}
+        run: |
+          PLUGIN_NAME=$(node -p "require('./package.json').name")
+          PLUGIN_VERSION=$(node -p "require('./package.json').version")
+          PLUGIN_DESC=$(node -p "require('./package.json').description || ''")
+          PLUGIN_AUTHOR=$(node -p "require('./package.json').author || 'FinalDevHQ'")
+          PLUGIN_ICON=$(node -p "require('./package.json').icon || '🔌'")
+          PLUGIN_HOMEPAGE="${{ github.server_url }}/${{ github.repository }}"
+          HAS_UI=$([ -d "public" ] && echo "true" || echo "false")
+
+          RELEASE_BODY=$(gh release view "v${PLUGIN_VERSION}" --repo "${{ github.repository }}" --json body -q .body 2>/dev/null || echo "")
+
+          git clone https://x-access-token:${GH_TOKEN}@github.com/FinalDevHQ/Dian-plugins.git /tmp/dian-plugins
+          cd /tmp/dian-plugins
+
+          PLUGIN_NAME="$PLUGIN_NAME" \
+          PLUGIN_VERSION="$PLUGIN_VERSION" \
+          PLUGIN_DESC="$PLUGIN_DESC" \
+          PLUGIN_AUTHOR="$PLUGIN_AUTHOR" \
+          PLUGIN_ICON="$PLUGIN_ICON" \
+          PLUGIN_HOMEPAGE="$PLUGIN_HOMEPAGE" \
+          HAS_UI="$HAS_UI" \
+          RELEASE_BODY="$RELEASE_BODY" \
+          node -e "
+          const fs = require('fs');
+          const index = JSON.parse(fs.readFileSync('index.json', 'utf8'));
+          const homepage = process.env.PLUGIN_HOMEPAGE;
+          const version = process.env.PLUGIN_VERSION;
+          const name = process.env.PLUGIN_NAME;
+          const today = new Date().toISOString().split('T')[0];
+
+          let plugin = index.plugins.find(p => p.homepage === homepage);
+          if (!plugin) {
+            plugin = { name, displayName: name, description: '', version: '0.0.0', author: 'FinalDevHQ', icon: '🔌', tags: [], hasUI: false, minRuntimeVersion: '0.2.7', homepage, downloadUrl: '', changelog: [] };
+            index.plugins.push(plugin);
+          }
+
+          plugin.version = version;
+          plugin.downloadUrl = homepage + '/releases/download/v' + version + '/' + name + '.zip';
+          if (process.env.PLUGIN_DESC) plugin.description = process.env.PLUGIN_DESC;
+          if (process.env.PLUGIN_AUTHOR) plugin.author = process.env.PLUGIN_AUTHOR;
+          if (process.env.PLUGIN_ICON) plugin.icon = process.env.PLUGIN_ICON;
+          plugin.hasUI = process.env.HAS_UI === 'true';
+
+          const notes = (process.env.RELEASE_BODY || '').split('\n').filter(l => l.trim() && !l.startsWith('#')).slice(0, 2).join(' ').replace(/\s+/g, ' ').trim() || '版本更新';
+          if (!plugin.changelog) plugin.changelog = [];
+          const exists = plugin.changelog.find(c => c.version === version);
+          if (!exists) plugin.changelog.unshift({ version, date: today, notes });
+
+          index.updatedAt = today;
+          fs.writeFileSync('index.json', JSON.stringify(index, null, 2) + '\n');
+          console.log('Updated:', name, version);
+          "
+
+          BRANCH="update-${PLUGIN_NAME}-v${PLUGIN_VERSION}"
+          git checkout -b "$BRANCH"
+          git add index.json
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: update ${PLUGIN_NAME} to v${PLUGIN_VERSION}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --repo FinalDevHQ/Dian-plugins \
+            --title "chore: update ${PLUGIN_NAME} to v${PLUGIN_VERSION}" \
+            --body "$(cat <<EOF
+          ## 插件索引自动更新
+
+          **插件**: ${PLUGIN_NAME}
+          **版本**: ${PLUGIN_VERSION}
+          **主页**: ${PLUGIN_HOMEPAGE}
+
+          ### Release Notes
+          ${RELEASE_BODY}
+
+          ---
+          *由插件 release workflow 自动生成*
+          EOF
+          )" \
+            --base main
