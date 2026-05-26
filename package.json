@@ -7,7 +7,8 @@
     "build": "tsup && vite build --config ui/vite.config.ts",
     "dev:plugin": "tsup --watch",
     "dev:ui": "vite --config ui/vite.config.ts",
-    "pack": "npm run build && node scripts/pack.mjs"
+    "pack": "npm run build && node scripts/pack.mjs",
+    "index-entry": "node scripts/index-entry.mjs"
   },
   "dependencies": {
     "@myfinal/plugin-runtime": "^0.2.7",
