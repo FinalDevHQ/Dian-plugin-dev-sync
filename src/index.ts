@@ -8,6 +8,7 @@ import {
   Plugin,
   pluginManager,
   type PluginSetupContext,
+  type PluginStore,
 } from "@myfinal/plugin-runtime";
 
 import { PKG_VERSION } from "./version.js";
@@ -65,12 +66,7 @@ export default class DevSyncPlugin {
   private authFailures = new Map<string, { count: number; firstAt: number }>();
 
   // 历史存储（通过路由注入获取引用）
-  private historyStore: {
-    createTable: (tableName: string, columns: string[], pluginName?: string) => Promise<void>;
-    insert: (tableName: string, data: Record<string, unknown>) => Promise<void>;
-    query: (tableName: string, params?: Record<string, unknown>, options?: { limit?: number; orderBy?: string; order?: "ASC" | "DESC" }) => Promise<Record<string, unknown>[]>;
-    delete: (tableName: string, params?: Record<string, unknown>) => Promise<number>;
-  } | null = null;
+  private historyStore: PluginStore | null = null;
 
   // ── 生命周期 ──────────────────────────────────────────────────────────────
 
@@ -186,12 +182,7 @@ export default class DevSyncPlugin {
   private setupHistoryRoutes(ctx: PluginSetupContext): void {
     const ensureTable = async (req: unknown): Promise<boolean> => {
       if (this.historyStore) return true;
-      const store = (req as unknown as Record<string, unknown>).pluginStore as {
-        createTable: (tableName: string, columns: string[], pluginName?: string) => Promise<void>;
-        insert: (tableName: string, data: Record<string, unknown>) => Promise<void>;
-        query: (tableName: string, params?: Record<string, unknown>, options?: { limit?: number; orderBy?: string; order?: "ASC" | "DESC" }) => Promise<Record<string, unknown>[]>;
-        delete: (tableName: string, params?: Record<string, unknown>) => Promise<number>;
-      } | undefined;
+      const store = (req as unknown as Record<string, unknown>).pluginStore as PluginStore | undefined;
       if (!store) return false;
       try {
         await store.createTable("dian_dev_sync_history", [
@@ -199,7 +190,7 @@ export default class DevSyncPlugin {
           "status TEXT NOT NULL",
           "message TEXT",
           "bundle_size INTEGER",
-        ], "dian-dev-sync");
+        ]);
         this.historyStore = store;
         return true;
       } catch {

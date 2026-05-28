@@ -11,12 +11,13 @@
     "index-entry": "node scripts/index-entry.mjs"
   },
   "dependencies": {
-    "@myfinal/plugin-runtime": "^0.2.7",
+    "@myfinal/plugin-runtime": "^0.2.9",
     "fflate": "^0.8.2",
     "reflect-metadata": "^0.2.2",
     "ws": "^8.18.2"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
@@ -26,7 +27,7 @@
     "react-dom": "^19.2.5",
     "tailwindcss": "^4.3.0",
     "tsup": "^8.5.0",
-    "typescript": "^6.0.2",
+    "typescript": "^5.6.3",
     "vite": "^8.0.10"
   }
 }
