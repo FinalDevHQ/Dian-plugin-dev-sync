@@ -85,6 +85,8 @@ jobs:
 
           git clone https://x-access-token:${GH_TOKEN}@github.com/FinalDevHQ/Dian-plugins.git /tmp/dian-plugins
           cd /tmp/dian-plugins
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           PLUGIN_NAME="$PLUGIN_NAME" \
           PLUGIN_VERSION="$PLUGIN_VERSION" \
@@ -126,8 +128,6 @@ jobs:
           "
 
           BRANCH="update-${PLUGIN_NAME}-v${PLUGIN_VERSION}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add index.json
           git diff --cached --quiet && echo "No changes to commit" && exit 0
