@@ -185,31 +185,62 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen p-5 flex flex-col gap-4">
+    <div className="min-h-screen p-6 flex flex-col gap-5 max-w-5xl mx-auto">
+
       {/* ── 标题 ────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-lg border bg-card text-2xl shadow-sm">
-          🛠️
+      <header className="flex items-center gap-3.5">
+        <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary text-lg shadow-sm">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" />
+            <polyline points="21 16 21 21 16 21" /><line x1="15" y1="15" x2="21" y2="21" />
+            <line x1="4" y1="4" x2="9" y2="9" />
+          </svg>
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-semibold leading-none">Dian Dev Sync</h1>
-            <Badge className="border-emerald-600/30 bg-emerald-500/10 text-emerald-700">
+            <h1 className="text-base font-bold tracking-tight leading-none">Dev Sync</h1>
+            <Badge className={
+              config
+                ? "border-emerald-500/30 bg-emerald-50 text-emerald-700"
+                : "border-border bg-muted/60 text-muted-foreground"
+            }>
               {config ? "运行中" : "加载中"}
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground truncate">
+          <p className="mt-0.5 text-xs text-muted-foreground truncate">
             {error ? error : `WS ${config?.host ?? "—"}:${config?.port ?? "—"}`}
           </p>
         </div>
-      </div>
+      </header>
 
       {/* ── 统计卡片 ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-3">
-        <StatCard label="监听地址" value={config?.host ?? "—"} mono />
-        <StatCard label="WS 端口" value={config?.port ?? "—"} mono />
-        <StatCard label="当前连接" value={sessions.length} />
-        <StatCard label="Token 状态" value={config?.hasToken ? "已设置" : "未设置"} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: "监听地址", value: config?.host ?? "—", mono: true },
+          { label: "WS 端口", value: config?.port ?? "—", mono: true },
+          { label: "当前连接", value: sessions.length },
+          { label: "Token 状态", value: config?.hasToken ? "已设置" : "未设置" },
+        ].map(s => (
+          <Card key={s.label} className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">{s.label}</span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                s.label === "Token 状态"
+                  ? config?.hasToken
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                  : s.label === "当前连接"
+                    ? sessions.length > 0
+                      ? "bg-primary/10 text-primary border-primary/20"
+                      : "bg-muted text-muted-foreground border-border"
+                    : "bg-primary/10 text-primary border-primary/20"
+              }`}>
+                {s.value}
+              </span>
+            </div>
+            <div className={`text-xl font-bold tabular-nums ${s.mono ? "font-mono" : ""}`}>{s.value}</div>
+          </Card>
+        ))}
       </div>
 
       {/* ── 配置编辑 ─────────────────────────────────────────── */}
@@ -221,9 +252,10 @@ export default function App() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto_auto]">
+          <div className="flex flex-col gap-4">
+            {/* Token 行 */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">认证 Token</span>
+              <span className="text-xs font-medium text-muted-foreground">认证 Token</span>
               <div className="flex gap-2">
                 <Input
                   type={showToken ? "text" : "password"}
@@ -231,85 +263,119 @@ export default function App() {
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && save()}
+                  className="flex-1"
                 />
                 <Button
                   variant="ghost"
-                  className="shrink-0 px-2"
+                  className="shrink-0 px-2.5"
                   onClick={() => setShowToken((v) => !v)}
                   title={showToken ? "隐藏" : "显示"}
                 >
-                  {showToken ? "🙈" : "👁️"}
+                  {showToken ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  )}
                 </Button>
                 <Button
                   variant="secondary"
-                  className="shrink-0 px-2 text-xs"
+                  className="shrink-0 text-xs"
                   onClick={generateToken}
                   disabled={genLoading}
                   title="自动生成安全的随机 Token"
                 >
-                  {genLoading ? "…" : "🎲 随机生成"}
+                  {genLoading ? (
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  )}
+                  随机生成
                 </Button>
               </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">监听地址</span>
-              <select
-                value={host}
-                onChange={(e) => setHost(e.target.value as "127.0.0.1" | "0.0.0.0")}
-                className="flex h-9 w-full min-w-0 rounded-md border bg-input/30 px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-              >
-                <option value="127.0.0.1">127.0.0.1（仅本地）</option>
-                <option value="0.0.0.0">0.0.0.0（所有网卡）</option>
-              </select>
+
+            {/* 端口 & 地址 行 */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">监听地址</span>
+                <select
+                  value={host}
+                  onChange={(e) => setHost(e.target.value as "127.0.0.1" | "0.0.0.0")}
+                  className="flex h-9 w-full rounded-lg border bg-background px-3 py-1 text-sm outline-none transition-all duration-150 focus-visible:border-ring focus-visible:ring-ring/30 focus-visible:ring-[3px]"
+                >
+                  <option value="127.0.0.1">127.0.0.1（仅本地）</option>
+                  <option value="0.0.0.0">0.0.0.0（所有网卡）</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">端口</span>
+                <Input
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">端口</span>
-              <Input
-                type="number"
-                min={1024}
-                max={65535}
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button
-                onClick={save}
-                disabled={saving}
-                className="w-full sm:w-auto"
-              >
-                {saving ? "保存中…" : "保存"}
+
+            {/* 警告 */}
+            {host === "0.0.0.0" && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                监听 0.0.0.0 会暴露到所有网卡，请确保已配置强 Token 并限制防火墙端口。
+              </div>
+            )}
+
+            {/* 保存按钮 */}
+            <div className="flex justify-end">
+              <Button onClick={save} disabled={saving} className="px-6">
+                {saving ? (
+                  <>
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+                    保存中…
+                  </>
+                ) : "保存配置"}
               </Button>
             </div>
           </div>
-          {host === "0.0.0.0" && (
-            <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              ⚠️ 监听 0.0.0.0 会暴露到所有网卡，请确保已配置强 Token 并限制防火墙端口。
-            </p>
-          )}
         </CardContent>
       </Card>
 
       {/* ── 会话列表 ─────────────────────────────────────────── */}
       <Card className="flex-1">
         <CardHeader>
-          <Label>远程开发会话</Label>
-          <CardDescription>正在通过 WebSocket 实时同步构建产物的插件项目</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>远程开发会话</Label>
+              <CardDescription>正在通过 WebSocket 实时同步构建产物的插件项目</CardDescription>
+            </div>
+            {sessions.length > 0 && (
+              <Badge className="border-primary/30 bg-primary/10 text-primary">
+                {sessions.length} 个连接
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">暂无连接</p>
+            <div className="py-10 flex flex-col items-center gap-2 text-muted-foreground">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="opacity-30">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span className="text-xs">暂无连接</span>
+            </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               {sessions.map((s) => (
                 <div
                   key={`${s.pluginName}-${s.connectedAt}`}
-                  className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+                  className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 px-3.5 py-2.5 text-xs group hover:bg-muted/50 transition-colors"
                 >
                   <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
                   <span className="truncate font-medium text-foreground">{s.pluginName}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    已连接 {fmtDuration(now - s.connectedAt)}
+                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                    {fmtDuration(now - s.connectedAt)}
                   </span>
                   {s.lastSyncAt && (
                     <span className="shrink-0 text-muted-foreground">
@@ -319,7 +385,7 @@ export default function App() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="ml-auto h-7 px-2 text-xs"
+                    className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => disconnect(s.pluginName)}
                   >
                     断开
@@ -335,7 +401,7 @@ export default function App() {
       <Card className="flex-1">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1">
+            <div>
               <Label>同步历史</Label>
               <CardDescription>最近 50 次插件同步记录</CardDescription>
             </div>
@@ -343,7 +409,7 @@ export default function App() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs text-red-600 hover:bg-red-50"
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={clearHistory}
               >
                 清空记录
@@ -353,36 +419,41 @@ export default function App() {
         </CardHeader>
         <CardContent>
           {history.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">暂无记录</p>
+            <div className="py-10 flex flex-col items-center gap-2 text-muted-foreground">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="opacity-30">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span className="text-xs">暂无记录</span>
+            </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-thin">
               {history.map((h) => (
                 <div
                   key={`${h.id}-${h.created_at}`}
-                  className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+                  className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 px-3.5 py-2.5 text-xs hover:bg-muted/50 transition-colors"
                 >
                   <span
                     className={`size-2 shrink-0 rounded-full ${
                       h.status === "success" ? "bg-emerald-500" : "bg-red-500"
                     }`}
                   />
-                  <span className="truncate font-medium text-foreground">{h.plugin_name}</span>
+                  <span className="truncate font-medium text-foreground min-w-0">{h.plugin_name}</span>
                   <Badge
                     className={
                       h.status === "success"
-                        ? "border-emerald-600/30 bg-emerald-500/10 text-emerald-700"
-                        : "border-red-600/30 bg-red-500/10 text-red-700"
+                        ? "border-emerald-500/30 bg-emerald-50 text-emerald-700"
+                        : "border-red-500/30 bg-red-50 text-red-700"
                     }
                   >
                     {h.status === "success" ? "成功" : "失败"}
                   </Badge>
                   {h.bundle_size !== null && (
-                    <span className="shrink-0 text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground font-mono tabular-nums">
                       {(h.bundle_size / 1024).toFixed(1)} KB
                     </span>
                   )}
-                  <span className="truncate text-muted-foreground">{h.message}</span>
-                  <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+                  <span className="truncate text-muted-foreground min-w-0">{h.message}</span>
+                  <span className="ml-auto shrink-0 tabular-nums text-muted-foreground text-[11px]">
                     {new Date(h.created_at).toLocaleString(navigator.language || "en-US")}
                   </span>
                 </div>
@@ -395,13 +466,18 @@ export default function App() {
       {/* ── Toast ──────────────────────────────────────────── */}
       {toast && (
         <div
-          className={`fixed bottom-4 right-4 rounded-md border px-3 py-2 text-xs shadow-lg ${
+          className={`fixed bottom-5 right-5 z-50 rounded-xl border px-4 py-2.5 text-sm font-medium shadow-lg flex items-center gap-2.5 animate-slide-in ${
             toast.ok
-              ? "border-emerald-600/40 bg-emerald-50 text-emerald-700"
-              : "border-red-600/40 bg-red-50 text-red-700"
+              ? "border-emerald-500/30 bg-emerald-50 text-emerald-700 shadow-emerald-500/10"
+              : "border-red-500/30 bg-red-50 text-red-700 shadow-red-500/10"
           }`}
         >
-          {toast.ok ? "✓" : "✗"} {toast.msg}
+          {toast.ok ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          )}
+          {toast.msg}
         </div>
       )}
     </div>

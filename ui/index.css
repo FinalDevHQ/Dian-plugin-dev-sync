@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ── shadcn 风格的语义化 token，与宿主 webui 同套设计系统 ───────────────── */
+/* ── shadcn 风格的语义化 token ──────────────────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -22,50 +22,87 @@
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/* 插件 UI — 亮色 / 暗色双主题，跟随系统 */
+/* ── 亮色主题 ──────────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.985 0.002 180);
+  --foreground: oklch(0.145 0.01 180);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --muted: oklch(0.955 0 0);
-  --muted-foreground: oklch(0.45 0 0);
-  --primary: oklch(0.205 0 0);
+  --card-foreground: oklch(0.145 0.01 180);
+  --muted: oklch(0.96 0.006 180);
+  --muted-foreground: oklch(0.5 0.01 180);
+  --primary: oklch(0.45 0.12 175);
   --primary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.94 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --accent: oklch(0.955 0.015 175);
+  --accent-foreground: oklch(0.35 0.08 175);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0 0 0 / 10%);
-  --input: oklch(0 0 0 / 8%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(0.91 0.008 180);
+  --input: oklch(0.955 0.006 180);
+  --ring: oklch(0.55 0.12 175);
   --radius: 0.625rem;
 }
 
+/* ── 暗色主题 ──────────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.145 0 0);
+    --background: oklch(0.145 0.01 180);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
+    --card: oklch(0.2 0.01 180);
     --card-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.27 0 0);
-    --muted-foreground: oklch(0.65 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.145 0 0);
-    --accent: oklch(0.27 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.27 0.015 180);
+    --muted-foreground: oklch(0.65 0.01 180);
+    --primary: oklch(0.65 0.12 175);
+    --primary-foreground: oklch(0.145 0.01 180);
+    --accent: oklch(0.27 0.02 175);
+    --accent-foreground: oklch(0.95 0.01 175);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(1 1 0 / 15%);
-    --input: oklch(1 1 0 / 12%);
-    --ring: oklch(0.75 0 0);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 10%);
+    --ring: oklch(0.7 0.12 175);
     --radius: 0.625rem;
   }
 }
 
 @layer base {
-  * { border-color: var(--border); }
+  * {
+    border-color: var(--border);
+  }
   html, body, #root {
     background: var(--background);
     color: var(--foreground);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.85 0 0) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 5px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: oklch(0.85 0 0);
+    border-radius: 10px;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
